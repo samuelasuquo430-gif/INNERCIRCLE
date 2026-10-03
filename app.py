@@ -4,21 +4,29 @@ from flask import Flask, request, redirect, render_template_string, session, jso
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = "inner-circle-abuja-connect-final"
+app.secret_key = "abuja-connect-pro-v5-fixed"
 DB_FILE = "/tmp/db.json"
 
 def load_db():
     if not os.path.exists(DB_FILE):
-        return {"users": {}, "messages": [], "circles": {}, "moments": []}
+        return {"users": {}, "messages": [], "circles": {}, "moments": [], "calls": []}
     try:
         with open(DB_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {"users": {}, "messages": [], "circles": {}, "moments": []}
+            d=json.load(f)
+            for u in d["users"].values():
+                u.setdefault("bio",""); u.setdefault("followers",[]); u.setdefault("following",[]); u.setdefault("friends",[]); u.setdefault("requests",[]); u.setdefault("photo",""); u.setdefault("last_seen","")
+            d.setdefault("moments",[]); d.setdefault("circles",{}); d.setdefault("calls",[])
+            return d
+    except Exception as e:
+        print("DB load error", e)
+        return {"users": {}, "messages": [], "circles": {}, "moments": [], "calls": []}
 
 def save_db(db):
-    with open(DB_FILE, "w") as f:
-        json.dump(db, f)
+    try:
+        with open(DB_FILE, "w") as f:
+            json.dump(db, f)
+    except:
+        pass
 
 PAGE = """
 <!DOCTYPE html>
@@ -30,82 +38,224 @@ PAGE = """
 <meta name="theme-color" content="#000000">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto}
-body{background:#000;color:#fff;min-height:100vh}
-.top{position:sticky;top:0;background:#000;border-bottom:1px solid #222;padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
-.logo{font-weight:900;font-size:20px;letter-spacing:-1px}
-.btn{background:#fff;color:#000;border:0;padding:12px 20px;border-radius:24px;font-weight:700;cursor:pointer}
+body{background:#000;color:#fff;display:flex;min-height:100vh}
+.sidebar{width:72px;background:#000;border-right:1px solid #222;position:fixed;left:0;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;padding:20px 0;gap:18px;z-index:20}
+.sidebar a{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:22px;color:#666}
+.sidebar a.active{background:#fff;color:#000}
+.top{font-weight:900;font-size:18px;padding:14px 16px;border-bottom:1px solid #222;position:sticky;top:0;background:#000;z-index:10}
+.main{margin-left:72px;flex:1;max-width:600px;width:100%;border-right:1px solid #111}
+.content{padding:16px}
+.btn{background:#fff;color:#000;border:0;padding:10px 18px;border-radius:20px;font-weight:700;cursor:pointer}
+.btn-sm{padding:6px 12px;font-size:13px}
+.btn-outline{background:transparent;color:#fff;border:1px solid #333}
 .card{background:#111;border:1px solid #222;border-radius:18px;padding:14px;margin:10px 0}
-.avatar{width:46px;height:46px;border-radius:50%;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800;overflow:hidden}
+.avatar{width:46px;height:46px;border-radius:50%;background:#222;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;overflow:hidden}
 .avatar img{width:100%;height:100%;object-fit:cover}
-input{width:100%;background:#111;border:1px solid #333;color:#fff;padding:14px;border-radius:14px;margin:6px 0;font-size:16px}
-.search input{background:#111;border:1px solid #222;border-radius:22px;padding-left:42px}
+input,textarea{width:100%;background:#111;border:1px solid #333;color:#fff;padding:14px;border-radius:14px;margin:6px 0;font-size:15px}
 .msg{max-width:76%;padding:12px 16px;border-radius:20px;margin:8px 0}
 .me{background:#fff;color:#000;margin-left:auto}
 .them{background:#1e1e1e;color:#fff}
+@media(max-width:700px){.sidebar{flex-direction:row;bottom:0;top:auto;width:100%;height:64px;border-right:0;border-top:1px solid #222;justify-content:space-around;padding:0}.main{margin-left:0;margin-bottom:64px}}
 </style></head><body>
-<div class="top"><div class="logo">inner.circle</div>{% if me %}<a href="/profile"><div class="avatar" style="width:34px;height:34px">{% if me.photo %}<img src="{{me.photo}}">{% else %}{{me.name[0]}}{% endif %}</div></a>{% endif %}</div>
-<div style="padding:16px;max-width:520px;margin:auto">{{content|safe}}</div>
+<div class="sidebar">
+<a href="/" class="{% if tab=='home' %}active{% endif %}">◍</a>
+<a href="/chats" class="{% if tab=='chats' %}active{% endif %}">💬</a>
+<a href="/circles" class="{% if tab=='groups' %}active{% endif %}">👥</a>
+<a href="/moments" class="{% if tab=='posts' %}active{% endif %}">⊞</a>
+<a href="/calls" class="{% if tab=='calls' %}active{% endif %}">📞</a>
+<a href="/profile" class="{% if tab=='profile' %}active{% endif %}">☺</a>
+</div>
+<div class="main">
+<div class="top">inner.circle <span style="color:#666;font-weight:400;font-size:11px;margin-left:8px">ABUJA CONNECT / LIFESTYLE</span></div>
+<div class="content">{{content|safe}}</div>
+</div>
 <script>setInterval(()=>{fetch('/ping',{method:'POST'})},30000);</script>
 </body></html>
 """
 
 @app.route("/icon.png")
 def icon():
-    svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" rx="120" fill="#000"/><circle cx="256" cy="256" r="160" fill="none" stroke="white" stroke-width="6"/><text x="256" y="340" font-family="Georgia" font-size="210" fill="white" text-anchor="middle" font-weight="700">i</text></svg>'''
-    return Response(svg, mimetype="image/svg+xml")
+    svg='''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" rx="120" fill="#000"/><circle cx="256" cy="256" r="160" fill="none" stroke="white" stroke-width="6"/><text x="256" y="340" font-family="Georgia" font-size="210" fill="white" text-anchor="middle" font-weight="700">i</text></svg>'''
+    return Response(svg,mimetype="image/svg+xml")
 @app.route("/manifest.json")
-def manifest():
-    return jsonify({"name":"inner.circle - Abuja Connect","short_name":"inner.circle","start_url":"/","display":"standalone","background_color":"#000000","theme_color":"#000000","icons":[{"src":"/icon.png","sizes":"512x512","type":"image/svg+xml"}]})
-@app.route("/sw.js")
-def sw(): return "", 200, {'Content-Type':'application/javascript'}
-@app.route("/ping", methods=["POST"])
+def manifest(): return jsonify({"name":"inner.circle","short_name":"inner.circle","start_url":"/","display":"standalone","background_color":"#000000","theme_color":"#000000","icons":[{"src":"/icon.png","sizes":"512x512","type":"image/svg+xml"}]})
+@app.route("/ping",methods=["POST"])
 def ping():
     if "user" not in session: return ""
     db=load_db(); u=db["users"].get(session["user"])
     if u: u["last_seen"]=datetime.utcnow().isoformat(); save_db(db)
     return ""
 def is_online(s):
-    try:
-        from datetime import datetime as dt
-        t=dt.fromisoformat(s); return dt.utcnow()-t < timedelta(minutes=3)
+    try: t=datetime.fromisoformat(s); return datetime.utcnow()-t < timedelta(minutes=3)
     except: return False
 
 @app.route("/")
 def home():
     if "user" not in session:
         return render_template_string(PAGE, content="""
-        <h1 style="font-size:44px;font-weight:900;line-height:0.9;margin:28px 0 12px 0">Your<br>Inner<br>Circle.</h1>
-        <p style="color:#aaa;margin-bottom:26px;font-size:16px;line-height:1.4">Abuja Connect / Lifestyle<br><span style="color:#666">Sign up and meet the community.</span></p>
-        <form method="post" action="/login"><input name="username" placeholder="Username"><input name="password" type="password" placeholder="Password"><button class="btn" style="width:100%;margin-top:12px;padding:16px">Login</button></form>
-        <div style="text-align:center;margin-top:20px"><a href="/signup" style="color:#fff;font-weight:700;text-decoration:none">Create account →</a></div>
-        """, me=None)
+        <h1 style="font-size:44px;font-weight:900;line-height:0.9;margin:20px 0 10px">Your<br>Inner<br>Circle.</h1>
+        <p style="color:#aaa;margin-bottom:24px;line-height:1.4">Abuja Connect / Lifestyle<br><span style="color:#666">Sign up and meet the community.</span></p>
+        <form method="post" action="/login"><input name="username" placeholder="Username"><input name="password" type="password" placeholder="Password"><button class="btn" style="width:100%;padding:16px;margin-top:8px">Login</button></form>
+        <div style="text-align:center;margin-top:16px"><a href="/signup" style="color:#fff;font-weight:700;text-decoration:none">Create account →</a></div>
+        """, tab="home")
+    return redirect("/chats")
+
+@app.route("/chats")
+def chats():
+    if "user" not in session: return redirect("/")
     db=load_db(); me=db["users"][session["user"]]; q=request.args.get("q","").lower()
-    html=f"""<div style="position:relative;margin:14px 0"><span style="position:absolute;left:14px;top:15px;color:#666">⌕</span><form method="get"><input name="q" value="{q}" placeholder="Search people..." style="padding-left:42px"></form></div><h3 style="color:#555;font-size:13px;letter-spacing:1px;margin:12px 0">COMMUNITY</h3>"""
+    html=f"<div style='display:flex;justify-content:space-between'><h3>Chats</h3><span style='color:#666;font-size:12px'>{len(me.get('friends',[]))} friends</span></div>"
+    html+=f"<input placeholder='Search Abuja...' value='{q}' onkeydown=\"if(event.key==='Enter') location.href='/chats?q='+this.value\" style='margin:12px 0'>"
+    if me.get("requests"):
+        html+="<div class='card' style='border-color:#444'><b>Requests</b>"
+        for req in me["requests"]:
+            u=db["users"].get(req)
+            if not u: continue
+            html+=f"<div style='display:flex;justify-content:space-between;margin-top:8px'><span>{u['name']} @{req}</span><a href='/accept/{req}'><button class='btn btn-sm'>Accept</button></a></div>"
+        html+="</div>"
     for uid,u in db["users"].items():
         if uid==session["user"]: continue
-        if q and q not in u['name'].lower() and q not in uid: continue
+        if q and q not in u['name'].lower() and q not in uid.lower(): continue
+        is_friend = uid in me.get("friends",[])
         photo=f'<img src="{u.get("photo","")}">' if u.get('photo') else u['name'][0].upper()
-        online="🟢" if is_online(u.get("last_seen","")) else ""
-        html+=f"""<div class="card" style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;gap:12px;align-items:center"><div class="avatar">{photo}</div><div><b>{u['name']}</b> {online}<br><small style="color:#666">@{uid}</small></div></div><a href="/chat/{uid}"><button class="btn">Chat</button></a></div>"""
-    return render_template_string(PAGE, content=html, me=me)
+        unread = sum(1 for m in db["messages"] if m["to"]==session["user"] and m["from"]==uid and not m.get("read"))
+        btn = f"<a href='/chat/{uid}'><button class='btn btn-sm'>Chat {f'({unread})' if unread else ''}</button></a>" if is_friend else f"<a href='/add/{uid}'><button class='btn btn-sm btn-outline'>Add</button></a> <a href='/chat/{uid}'><button class='btn btn-sm'>Msg</button></a>"
+        html+=f"<div class='card' style='display:flex;justify-content:space-between;align-items:center'><div style='display:flex;gap:12px;align-items:center'><div class='avatar'>{photo}</div><div><b>{u['name']}</b><br><small style='color:#666'>@{uid} • {len(u.get('followers',[]))} followers</small></div></div><div>{btn}</div></div>"
+    return render_template_string(PAGE, content=html, tab="chats")
 
-@app.route("/signup", methods=["GET","POST"])
-def signup():
+@app.route("/add/<uid>")
+def add_friend(uid):
+    if "user" not in session: return redirect("/")
+    db=load_db(); other=db["users"].get(uid)
+    if not other or uid==session["user"]: return redirect("/chats")
+    if session["user"] not in other["requests"] and session["user"] not in other.get("friends",[]):
+        other["requests"].append(session["user"]); save_db(db)
+    return redirect("/chats")
+
+@app.route("/accept/<uid>")
+def accept(uid):
+    if "user" not in session: return redirect("/")
+    db=load_db(); me=db["users"][session["user"]]
+    if uid in me.get("requests",[]):
+        me["requests"].remove(uid)
+        if uid not in me["friends"]: me["friends"].append(uid)
+        if uid not in me["followers"]: me["followers"].append(uid)
+        other=db["users"][uid]
+        if session["user"] not in other["friends"]: other["friends"].append(session["user"])
+        if session["user"] not in other["followers"]: other["followers"].append(session["user"])
+        if session["user"] not in other.get("following",[]): other["following"].append(session["user"])
+        if uid not in me.get("following",[]): me["following"].append(uid)
+        save_db(db)
+    return redirect("/chats")
+
+@app.route("/chat/<uid>")
+def chat(uid):
+    if "user" not in session: return redirect("/")
+    db=load_db(); me=db["users"][session["user"]]; other=db["users"].get(uid)
+    if not other: return "Not found"
+    is_friend = uid in me.get("friends",[])
+    msgs=[m for m in db["messages"] if (m["from"]==session["user"] and m["to"]==uid) or (m["from"]==uid and m["to"]==session["user"])]
+    sent_by_me = sum(1 for m in msgs if m["from"]==session["user"])
+    can_send = is_friend or sent_by_me < 1
+    for m in db["messages"]:
+        if m["to"]==session["user"] and m["from"]==uid: m["read"]=True
+    save_db(db)
+    html=f"<a href='/chats' style='color:#888;text-decoration:none'>‹ Back</a><h3 style='margin:12px 0'>{other['name']}</h3>"
+    if not is_friend: html+=f"<div class='card' style='font-size:13px;color:#aaa'>Add @{uid} to chat freely. You can send 1 message until they accept. <a href='/add/{uid}' style='color:#fff'>Add</a></div>"
+    html+="<div>"
+    for m in msgs[-100:]:
+        who="me" if m["from"]==session["user"] else "them"
+        html+=f"<div class='msg {who}'>{m['text']}<br><small style='opacity:.5;font-size:11px'>{m['time'][11:16]}</small></div>"
+    html+="</div>"
+    if can_send:
+        html+=f"<form method='post' action='/send/{uid}' style='display:flex;gap:8px;margin-top:16px'><input name='text' placeholder='Message...' required style='flex:1'><button class='btn'>Send</button></form>"
+    else:
+        html+=f"<p style='color:#666;margin-top:12px;text-align:center'>Waiting for @{uid} to accept.</p>"
+    return render_template_string(PAGE, content=html, tab="chats")
+
+@app.route("/send/<uid>", methods=["POST"])
+def send(uid):
+    if "user" not in session: return redirect("/")
+    db=load_db(); db["messages"].append({"from":session["user"],"to":uid,"text":request.form["text"],"time":datetime.utcnow().isoformat(),"read":False}); save_db(db); return redirect(f"/chat/{uid}")
+
+@app.route("/circles")
+def circles():
+    if "user" not in session: return redirect("/")
+    db=load_db(); me=db["users"][session["user"]]
+    html="<h3>Groups</h3><form method='post' action='/create_circle' style='display:flex;gap:8px'><input name='name' placeholder='New Group' required><button class='btn'>Create</button></form>"
+    for cid,c in db["circles"].items():
+        if session["user"] in c["members"]:
+            html+=f"<div class='card'><b>{c['name']}</b><br><small>{len(c['members'])} members</small><div style='margin-top:8px'><a href='/group/{cid}'><button class='btn btn-sm'>Open</button></a></div></div>"
+    return render_template_string(PAGE, content=html, tab="groups")
+
+@app.route("/create_circle", methods=["POST"])
+def create_circle():
+    db=load_db(); cid=str(len(db["circles"])+1); db["circles"][cid]={"name":request.form["name"],"members":[session["user"]],"messages":[]}; save_db(db); return redirect("/circles")
+
+@app.route("/group/<cid>", methods=["GET","POST"])
+def group_chat(cid):
+    if "user" not in session: return redirect("/")
+    db=load_db(); g=db["circles"].get(cid)
+    if not g or session["user"] not in g["members"]: return "Not in group"
     if request.method=="POST":
-        db=load_db(); uname=request.form["username"].lower()
-        if uname in db["users"]: return "Taken <a href=/signup>back</a>"
-        db["users"][uname]={"name":request.form["name"],"username":uname,"password":generate_password_hash(request.form["password"]),"photo":"","last_seen":datetime.utcnow().isoformat()}
-        save_db(db); session["user"]=uname; session.permanent=True; return redirect("/")
-    return render_template_string(PAGE, content="""<h2 style="margin:20px 0">Join inner.circle</h2><p style="color:#888;margin-bottom:16px">Abuja Connect / Lifestyle</p><form method="post"><input name="name" placeholder="Full Name" required><input name="username" placeholder="username" required><input name="password" type="password" placeholder="Password" required><button class="btn" style="width:100%;padding:16px">Create Account</button></form>""", me=None)
+        g["messages"].append({"user":session["user"],"text":request.form["text"],"time":datetime.utcnow().isoformat()}); save_db(db); return redirect(f"/group/{cid}")
+    html=f"<a href='/circles' style='color:#888;text-decoration:none'>‹ Back</a><h3 style='margin:12px 0'>{g['name']}</h3><div>"
+    for m in g["messages"][-100:]:
+        who="me" if m["user"]==session["user"] else "them"
+        html+=f"<div class='msg {who}'><b style='font-size:12px'>@{m['user']}</b><br>{m['text']}</div>"
+    html+=f"</div><form method='post' style='display:flex;gap:8px;margin-top:16px'><input name='text' placeholder='Message group...' required style='flex:1'><button class='btn'>Send</button></form>"
+    return render_template_string(PAGE, content=html, tab="groups")
 
-@app.route("/login", methods=["POST"])
-def login():
-    db=load_db(); u=db["users"].get(request.form["username"].lower())
-    if u and check_password_hash(u["password"], request.form["password"]):
-        session["user"]=u["username"]; session.permanent=True; u["last_seen"]=datetime.utcnow().isoformat(); save_db(db); return redirect("/")
-    return "Wrong login <a href=/>back</a>"
-@app.route("/logout")
-def logout(): session.clear(); return redirect("/")
+@app.route("/moments", methods=["GET","POST"])
+def moments():
+    if "user" not in session: return redirect("/")
+    db=load_db(); me=db["users"][session["user"]]
+    if request.method=="POST":
+        db["moments"].insert(0,{"id":str(len(db["moments"])+1),"user":session["user"],"text":request.form["text"],"time":datetime.utcnow().isoformat(),"likes":0,"loves":0,"hahas":0,"sads":0,"thumbs":0,"comments":[]}); save_db(db); return redirect("/moments")
+    html="<h3>Feed</h3><form method='post'><textarea name='text' placeholder=\"What's happening in Abuja?\" required></textarea><button class='btn' style='width:100%'>Post</button></form>"
+    for m in db["moments"][:30]:
+        u=db["users"].get(m["user"],{"name":m["user"]}); photo=f'<img src="{u.get("photo","")}">' if u.get('photo') else u['name'][0].upper()
+        html+=f"""<div class="card"><div style="display:flex;gap:10px"><div class="avatar" style="width:36px;height:36px">{photo}</div><div style="flex:1"><b>{u['name']}</b> <small style="color:#666">@{m['user']}</small><p style="margin:8px 0">{m['text']}</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+        <a href="/react/{m['id']}?t=likes"><button style="background:#111;border:1px solid #222;border-radius:20px;padding:4px 10px;color:#fff">❤️ {m.get('likes',0)}</button></a>
+        <a href="/react/{m['id']}?t=loves"><button style="background:#111;border:1px solid #222;border-radius:20px;padding:4px 10px;color:#fff">😍 {m.get('loves',0)}</button></a>
+        <a href="/react/{m['id']}?t=hahas"><button style="background:#111;border:1px solid #222;border-radius:20px;padding:4px 10px;color:#fff">😂 {m.get('hahas',0)}</button></a>
+        <a href="/react/{m['id']}?t=sads"><button style="background:#111;border:1px solid #222;border-radius:20px;padding:4px 10px;color:#fff">😢 {m.get('sads',0)}</button></a>
+        <a href="/react/{m['id']}?t=thumbs"><button style="background:#111;border:1px solid #222;border-radius:20px;padding:4px 10px;color:#fff">👍 {m.get('thumbs',0)}</button></a>
+        </div>"""
+        for c in m.get("comments",[])[-3:]:
+            html+=f"<div style='background:#000;padding:8px 10px;border-radius:12px;margin-top:6px;font-size:13px'><b>@{c['user']}</b> {c['text']}</div>"
+        html+=f"""<form method="post" action="/comment/{m['id']}" style="display:flex;gap:6px;margin-top:8px"><input name="text" placeholder="Add comment..." style="padding:8px;font-size:13px"><button class="btn btn-sm">→</button></form></div></div></div>"""
+    return render_template_string(PAGE, content=html, tab="posts")
+
+@app.route("/react/<mid>")
+def react(mid):
+    t=request.args.get("t","likes")
+    db=load_db()
+    for m in db["moments"]:
+        if m["id"]==mid:
+            m[t]=m.get(t,0)+1; save_db(db); break
+    return redirect("/moments")
+
+@app.route("/comment/<mid>", methods=["POST"])
+def comment(mid):
+    db=load_db()
+    for m in db["moments"]:
+        if m["id"]==mid:
+            m.setdefault("comments",[]).append({"user":session["user"],"text":request.form["text"],"time":datetime.utcnow().isoformat()}); save_db(db); break
+    return redirect("/moments")
+
+@app.route("/calls")
+def calls():
+    if "user" not in session: return redirect("/")
+    db=load_db(); me=db["users"][session["user"]]
+    html="<h3>Calls</h3><p style='color:#666;margin:12px 0'>Voice & video launching soon.</p>"
+    for uid in me.get("friends",[]):
+        u=db["users"].get(uid)
+        if not u: continue
+        html+=f"<div class='card' style='display:flex;justify-content:space-between'><span>{u['name']}</span><button class='btn btn-sm' onclick=\"alert('Calling {u['name']} - coming soon')\">📞 Call</button></div>"
+    return render_template_string(PAGE, content=html, tab="calls")
+
 @app.route("/profile", methods=["GET","POST"])
 def profile():
     if "user" not in session: return redirect("/")
@@ -115,49 +265,34 @@ def profile():
             f=request.files["photo"]; data=f.read()
             import base64; b64=base64.b64encode(data).decode()
             me["photo"]=f"data:{f.mimetype};base64,{b64}"
-        if request.form.get("name"): me["name"]=request.form["name"]
+        me["name"]=request.form.get("name",me["name"])
+        me["bio"]=request.form.get("bio","")
+        new_user=request.form.get("username","").lower()
+        if new_user and new_user!=session["user"] and new_user not in db["users"]:
+            db["users"][new_user]=db["users"].pop(session["user"]); db["users"][new_user]["username"]=new_user; session["user"]=new_user; me=db["users"][new_user]
         save_db(db); return redirect("/profile")
     pic=f'<img src="{me.get("photo","")}">' if me.get('photo') else me['name'][0].upper()
-    return render_template_string(PAGE, content=f"""<a href="/" style="color:#888;text-decoration:none">‹ Back</a><h2 style="margin:16px 0">Profile</h2><div class="card" style="text-align:center;padding:24px"><div class="avatar" style="width:80px;height:80px;margin:auto;font-size:32px">{pic}</div><h3 style="margin-top:12px">{me['name']}</h3></div><form method="post" enctype="multipart/form-data"><input name="name" value="{me['name']}"><input type="file" name="photo" accept="image/*"><button class="btn" style="width:100%;padding:16px">Save</button></form>""", me=me)
-@app.route("/chat/<uid>")
-def chat(uid):
-    if "user" not in session: return redirect("/")
-    db=load_db(); me=db["users"][session["user"]]; other=db["users"].get(uid)
-    if not other: return "Not found"
-    for m in db["messages"]:
-        if m["to"]==session["user"] and m["from"]==uid: m["read"]=True
-    save_db(db)
-    msgs=[m for m in db["messages"] if (m["from"]==session["user"] and m["to"]==uid) or (m["from"]==uid and m["to"]==session["user"])]
-    html=f"<a href='/' style='color:#888;text-decoration:none'>‹ Back</a><h3 style='margin:16px 0'>{other['name']}</h3><div>"
-    for m in msgs[-100:]:
-        who="me" if m["from"]==session["user"] else "them"
-        html+=f"<div class='msg {who}'>{m['text']}</div>"
-    html+=f"</div><form method='post' action='/send/{uid}' style='display:flex;gap:8px;margin-top:16px'><input name='text' placeholder='Message...' required style='flex:1'><button class='btn'>Send</button></form>"
-    return render_template_string(PAGE, content=html, me=me)
-@app.route("/send/<uid>", methods=["POST"])
-def send(uid):
-    if "user" not in session: return redirect("/")
-    db=load_db(); db["messages"].append({"from":session["user"],"to":uid,"text":request.form["text"],"time":datetime.utcnow().isoformat(),"read":False}); save_db(db); return redirect(f"/chat/{uid}")
-@app.route("/circles")
-def circles():
-    if "user" not in session: return redirect("/")
-    db=load_db(); me=db["users"][session["user"]]
-    html="<a href='/' style='color:#888;text-decoration:none'>‹ Back</a><h3 style='margin:16px 0'>Circles</h3><form method='post' action='/create_circle' style='display:flex;gap:8px'><input name='name' placeholder='New Circle' required><button class='btn'>Create</button></form>"
-    for cid,c in db["circles"].items():
-        if session["user"] in c["members"]: html+=f"<div class='card'><b>{c['name']}</b></div>"
-    return render_template_string(PAGE, content=html, me=me)
-@app.route("/create_circle", methods=["POST"])
-def create_circle():
-    db=load_db(); cid=str(len(db["circles"])+1); db["circles"][cid]={"name":request.form["name"],"members":[session["user"]]}; save_db(db); return redirect("/circles")
-@app.route("/moments", methods=["GET","POST"])
-def moments():
-    if "user" not in session: return redirect("/")
-    db=load_db(); me=db["users"][session["user"]]
+    return render_template_string(PAGE, content=f"""
+    <h3>Profile</h3><div class="card" style="text-align:center;padding:22px"><div class="avatar" style="width:84px;height:84px;margin:auto;font-size:32px">{pic}</div><h3 style="margin-top:10px">{me['name']}</h3><small style="color:#666">@{me['username']}</small><p style="color:#aaa;margin-top:8px;font-size:14px">{me.get('bio','No bio yet')}</p><div style="display:flex;justify-content:center;gap:20px;margin-top:14px"><div><b>{len(me.get('followers',[]))}</b><br><small style="color:#666">Followers</small></div><div><b>{len(me.get('following',[]))}</b><br><small style="color:#666">Following</small></div><div><b>{len(me.get('friends',[]))}</b><br><small style="color:#666">Friends</small></div></div></div>
+    <form method="post" enctype="multipart/form-data"><label style="font-size:13px;color:#888">Full Name</label><input name="name" value="{me['name']}"><label style="font-size:13px;color:#888">Username</label><input name="username" value="{me['username']}"><label style="font-size:13px;color:#888">Bio</label><textarea name="bio" placeholder="Abuja lifestyle...">{me.get('bio','')}</textarea><label style="font-size:13px;color:#888">Profile Photo</label><input type="file" name="photo" accept="image/*"><button class="btn" style="width:100%;padding:16px;margin-top:8px">Save Profile ✓</button></form>
+    <div style="margin-top:16px"><a href="/logout" style="color:#666;text-decoration:none">Logout</a></div>
+    """, tab="profile")
+
+@app.route("/signup", methods=["GET","POST"])
+def signup():
     if request.method=="POST":
-        db["moments"].insert(0,{"user":session["user"],"text":request.form["text"],"time":datetime.utcnow().isoformat()}); save_db(db); return redirect("/moments")
-    html="<a href='/' style='color:#888;text-decoration:none'>‹ Back</a><h3 style='margin:16px 0'>Moments</h3><form method='post'><textarea name='text' placeholder=\"What's happening in Abuja?\" style='width:100%;background:#111;border:1px solid #333;color:#fff;padding:14px;border-radius:14px' required></textarea><button class='btn' style='width:100%;margin-top:8px'>Post</button></form>"
-    for m in db["moments"][:30]:
-        u=db["users"].get(m["user"],{"name":m["user"]}); html+=f"<div class='card'><b>{u['name']}</b><p style='margin-top:8px'>{m['text']}</p></div>"
-    return render_template_string(PAGE, content=html, me=me)
+        db=load_db(); uname=request.form["username"].lower()
+        if uname in db["users"]: return "Taken <a href=/signup>back</a>"
+        db["users"][uname]={"name":request.form["name"],"username":uname,"password":generate_password_hash(request.form["password"]),"photo":"","bio":"","followers":[],"following":[],"friends":[],"requests":[],"last_seen":datetime.utcnow().isoformat()}
+        save_db(db); session["user"]=uname; session.permanent=True; return redirect("/chats")
+    return render_template_string(PAGE, content="""<h2>Join inner.circle</h2><p style="color:#888">Abuja Connect / Lifestyle</p><form method="post"><input name="name" placeholder="Full Name" required><input name="username" placeholder="username" required><input name="password" type="password" placeholder="Password" required><button class="btn" style="width:100%;padding:16px">Create</button></form>""", tab="home")
+@app.route("/login", methods=["POST"])
+def login():
+    db=load_db(); u=db["users"].get(request.form["username"].lower())
+    if u and check_password_hash(u["password"], request.form["password"]):
+        session["user"]=u["username"]; session.permanent=True; u["last_seen"]=datetime.utcnow().isoformat(); save_db(db); return redirect("/chats")
+    return "Wrong <a href=/>back</a>"
+@app.route("/logout")
+def logout(): session.clear(); return redirect("/")
 
 if __name__=="__main__": app.run()
